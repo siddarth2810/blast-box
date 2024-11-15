@@ -1,5 +1,6 @@
 const uws = require('./uWebSockets.js-20.49.0/uws');
 const path = require('path');
+const fs = require('fs');
 const PORT = 8080;
 const app = uws.App();
 
@@ -19,15 +20,24 @@ app.ws("/*", {
 });
 
 app.get('/*', (res, req) => {
+	//For every request (/*), the server always served index.html, ignoring the actual file being requested (e.g., client.js or style.css, so we need urlPath 
 	const urlPath = req.getUrl();
 	const filePath = path.join(__dirname, 'client', urlPath === '/' ? 'index.html' : urlPath);
-	require('fs').readFile(filePath, (err, data) => {
-		if (err) {
-			res.writeStatus("404 Not Found").end("404 - File Not Found");
-		} else {
-			res._end(data);
-		}
+
+	res.onAborted(() => {
+		console.log('Request was aborted by the client.');
 	});
+
+	fs.readFile(filePath, 'utf-8', (err, data) => {
+		res.cork(() => {
+			if (err) {
+				res.end('file not found');
+			} else {
+				res.writeHeader('Content-Type', 'text/html');
+				res.end(data);
+			}
+		})
+	})
 });
 
 app.listen(PORT, (token) => {
