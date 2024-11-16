@@ -1,26 +1,63 @@
+import { Player } from "./Player.js";
 const url = "ws://localhost:8080";
-const ws = new WebSocket(url); // Directly using WebSocket for browser compatibility
+const ws = new WebSocket(url);
 
-// Event: Connection established
-ws.onopen = () => {
+const canvas = document.querySelector("canvas");
+const c = canvas.getContext("2d");
+
+const scoreEl = document.querySelector("#scoreEl");
+
+canvas.width = innerWidth;
+canvas.height = innerHeight;
+
+const x = canvas.width / 2;
+const y = canvas.height / 2;
+
+const player = new Player(x, y, 10, "white");
+
+let animationId;
+
+function animate() {
+  animationId = requestAnimationFrame(animate);
+  c.fillStyle = "rgba(0,0,0,0.1)";
+  c.fillRect(0, 0, canvas.width, canvas.height);
+
+  player.draw();
+}
+animate();
+ws.addEventListener("open", () => {
   console.log("Connected to the server");
-  ws.send("Hello, server!");
-};
 
-// Event: Message received from the server
-ws.onmessage = (event) => {
-  console.log("Received message:", event.data);
+  // Send a test message to the server
+  ws.send(
+    JSON.stringify({
+      type: "test",
+      message: "Hello, server!",
+    }),
+  );
+});
 
-  // Change the background color of the page to black
-  document.body.style.backgroundColor = "black";
-};
+ws.addEventListener("message", (event) => {
+  try {
+    const data = JSON.parse(event.data);
 
-// Event: Connection closed
-ws.onclose = (event) => {
+    switch (data.type) {
+      case "welcome":
+        console.log("Server says:", data.message);
+        break;
+
+      case "updatePlayers":
+        console.log("Current players:", data.players);
+        break;
+
+      default:
+        console.log("Unknown message type:", data);
+    }
+  } catch (error) {
+    console.error("Error processing message:", error);
+  }
+});
+
+ws.addEventListener("close", (event) => {
   console.log("Connection closed:", event.code, event.reason);
-};
-
-// Event: Error encountered
-ws.onerror = (error) => {
-  console.error("WebSocket error:", error);
-};
+});
