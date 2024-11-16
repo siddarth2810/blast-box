@@ -17,15 +17,16 @@ app.ws("/*", {
 			message: "welcome to the server"
 		}));
 		players[ws.id] = {
-			x: 100,
-			y: 100
+			x: Math.floor(Math.random() * 400 + 100),
+			y: Math.floor(Math.random() * 400 + 100)
 		}
+
 		//first select channel using subscribe
 		ws.subscribe("updatePlayers");
 		//then publish
 		app.publish("updatePlayers", JSON.stringify({
 			type: "updatePlayers",
-			players: players
+			backendPlayers: players
 		}));
 	},
 	message: (ws, message) => {
@@ -49,7 +50,7 @@ app.ws("/*", {
 		delete players[ws.id];
 		//broadcast after closing
 		app.publish('updatePlayers', JSON.stringify({
-			players: players,
+			backendPlayers: players,
 			type: "updatePlayers"
 		}));
 	},
