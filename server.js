@@ -5,6 +5,7 @@ const fs = require("fs");
 
 // Object to hold player data
 const backEndPlayers = {};
+const inputHistory = {};
 
 const PORT = 8000;
 const app = uws.App();
@@ -30,7 +31,11 @@ app.ws("/*", {
       y: Math.floor(Math.random() * 400 + 100),
       color: `hsl(${360 * Math.random()}, 100%, 44%)`,
       id: ws.id,
+      seqNumber: 0,
     };
+
+    //init input history
+    inputHistory[ws.id] = [];
 
     ws.subscribe("updatePlayers");
 
@@ -44,34 +49,46 @@ app.ws("/*", {
   },
 
   message: (ws, message, isBinary) => {
-    const decoder = new TextDecoder("utf-8");
-    const decodedMessage = decoder.decode(message);
-
     try {
+      const decoder = new TextDecoder("utf-8");
+      const decodedMessage = decoder.decode(message);
       const data = JSON.parse(decodedMessage);
 
       if (data.type === "position") {
         const player = backEndPlayers[ws.id];
-        if (player) {
-          switch (data.key) {
-            case "KeyW":
-            case "ArrowUp":
-              player.y -= 10;
-              break;
-            case "KeyS":
-            case "ArrowDown":
-              player.y += 10;
-              break;
-            case "KeyA":
-            case "ArrowLeft":
-              player.x -= 10;
-              break;
-            case "KeyD":
-            case "ArrowRight":
-              player.x += 10;
-              break;
+        if (!player) return;
+        player.seqNumber = data.seqNumber;
+
+        if (data.x > 50 || data.y > 50) {
+          if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+            // Movement might be too large, ignore or clamp
+            dx = clamp(dx);
+            dy = clamp(dy);
+            return;
           }
         }
+        player.x += data.dx;
+        player.y += data.dy;
+
+        //send update to client
+        ws.send(
+          JSON.stringify({
+            id: ws.id,
+            type: "updatePosition",
+            backEndPlayer: backEndPlayers[ws.id],
+            dx: player.dx,
+            dy: player.dy,
+          }),
+        );
+
+        //publish
+        app.publish(
+          "updatePlayers",
+          JSON.stringify({
+            type: "updatePlayers",
+            backEndPlayers: backEndPlayers,
+          }),
+        );
       }
     } catch (error) {
       console.error("Error processing message:", error);
