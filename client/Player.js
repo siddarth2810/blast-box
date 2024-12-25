@@ -1,6 +1,4 @@
-const canvas = document.querySelector("canvas");
-const c = canvas.getContext("2d");
-export class Player {
+class Player {
   constructor({ x, y, radius, color }) {
     this.x = x;
     this.y = y;

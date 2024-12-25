@@ -1,4 +1,3 @@
-import { Player } from "./Player.js";
 const url = "ws://localhost:8000";
 const ws = new WebSocket(url);
 
@@ -16,11 +15,10 @@ const y = canvas.height / 2;
 
 //const player = new Player(x, y, 10, "white");
 const frontEndPlayers = {};
-let seqNumber = 0;
 const playerInputs = [];
+const frontEndProjectiles = [];
 
 let animationId;
-
 function animate() {
   animationId = requestAnimationFrame(animate);
   c.fillStyle = "rgba(0,0,0,0.1)";
@@ -28,6 +26,10 @@ function animate() {
   for (const id in frontEndPlayers) {
     const frontEndPlayer = frontEndPlayers[id];
     frontEndPlayer.draw();
+  }
+  for (let i = frontEndProjectiles.length - 1; i >= 0; i--) {
+    const frontEndProjectile = frontEndProjectiles[i];
+    frontEndProjectile.update();
   }
 }
 animate();
@@ -38,7 +40,8 @@ let pendingInputs = [];
 window.addEventListener("keydown", (event) => {
   if (!currentPlayerId || !frontEndPlayers[currentPlayerId]) return;
 
-  const speed = 50;
+  const speed = 15;
+  let seqNumber = 0;
   let dx = 0,
     dy = 0;
   if (event.code === "KeyW" || event.code === "ArrowUp") dy = -speed;
@@ -73,30 +76,31 @@ ws.addEventListener("message", (event) => {
     switch (data.type) {
       case "welcome":
         console.log("Server says this:", data.message);
-        console.log(frontEndPlayers); //gives empty object
+        // console.log(frontEndPlayers); //gives empty object
         currentPlayerId = data.id;
-        console.log(currentPlayerId);
+        //console.log(currentPlayerId);
         break;
 
       case "updatePosition":
         const { id, x, y, backEndPlayer } = data;
         if (!frontEndPlayers[id]) return;
+        if (id === currentPlayerId) {
+          // Update the authoritative position
+          frontEndPlayers[id].x = x;
+          frontEndPlayers[id].y = y;
 
-        // Update the authoritative position
-        frontEndPlayers[id].x = x;
-        frontEndPlayers[id].y = y;
+          const lastBackendInputIndex = playerInputs.findIndex((input) => {
+            return backEndPlayer.seqNumber === input.seqNumber;
+          });
+          if (lastBackendInputIndex > -1) {
+            playerInputs.splice(0, lastBackendInputIndex + 1);
+          }
 
-        const lastBackendInputIndex = playerInputs.findIndex((input) => {
-          return backEndPlayer.seqNumber === input.seqNumber;
-        });
-        if (lastBackendInputIndex > -1) {
-          playerInputs.splice(0, lastBackendInputIndex + 1);
-        }
-
-        // Reapply remaining, unacknowledged inputs
-        for (const input of pendingInputs) {
-          frontEndPlayers[id].x += input.dx;
-          frontEndPlayers[id].y += input.dy;
+          // Reapply remaining, unacknowledged inputs
+          for (const input of pendingInputs) {
+            frontEndPlayers[id].y += input.dy;
+            frontEndPlayers[id].x += input.dx;
+          }
         }
 
       case "updatePlayers":
@@ -106,8 +110,12 @@ ws.addEventListener("message", (event) => {
           const backEndPlayer = backEndPlayers[id];
           const frontEndPlayer = frontEndPlayers[id];
           if (frontEndPlayer) {
-            frontEndPlayer.x = backEndPlayer.x;
-            frontEndPlayer.y = backEndPlayer.y;
+            gsap.to(frontEndPlayer, {
+              x: backEndPlayer.x,
+              y: backEndPlayer.y,
+              duration: 0.015,
+              ease: "linear",
+            });
           } else {
             // Add new players
             frontEndPlayers[id] = new Player({
@@ -124,7 +132,7 @@ ws.addEventListener("message", (event) => {
             delete frontEndPlayers[id];
           }
         }
-        console.log(frontEndPlayers);
+        //console.log(frontEndPlayers);
         break;
 
       default:
