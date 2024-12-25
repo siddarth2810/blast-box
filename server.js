@@ -59,8 +59,8 @@ app.ws("/*", {
         if (!player) return;
         player.seqNumber = data.seqNumber;
 
-        if (data.x > 50 || data.y > 50) {
-          if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+        if (data.x > 15 || data.y > 15) {
+          if (Math.abs(dx) > 15 || Math.abs(dy) > 15) {
             // Movement might be too large, ignore or clamp
             dx = clamp(dx);
             dy = clamp(dy);
@@ -146,7 +146,7 @@ app.get("/*", (res, req) => {
   });
 });
 
-app.listen(PORT, (token) => {
+app.listen(PORT, "0.0.0.0", (token) => {
   if (token) {
     console.log(`Sockets server started at ${PORT}`);
   } else {
