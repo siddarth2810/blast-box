@@ -1,26 +1,28 @@
 class Projectile {
-  constructor({ x, y, radius, color = "white", velocity }) {
+  constructor({ x, y, angle, velocity }) {
     this.x = x;
     this.y = y;
-    this.radius = radius;
-    this.color = color;
-    this.velocity = velocity;
-  }
-
-  draw() {
-    c.save();
-    c.shadowColor = this.color;
-    c.shadowBlur = 20;
-    c.beginPath();
-    c.arc(this.x, this.y, this.radius, 0, Math.PI * 2, false);
-    c.fillStyle = this.color;
-    c.fill();
-    c.restore();
+    this.angle = angle;
+    // Default velocity if none is provided
+    this.velocity = velocity || {
+      x: 10 * Math.cos(this.angle),
+      y: 10 * Math.sin(this.angle),
+    };
   }
 
   update() {
+    // Move in the direction of velocity
+    this.x += this.velocity.x;
+    this.y += this.velocity.y;
     this.draw();
-    this.x = this.x + this.velocity.x;
-    this.y = this.y + this.velocity.y;
+  }
+
+  draw() {
+    push();
+    stroke(51); // Gray outline
+    strokeWeight(3); // Thick outline
+    fill(255, 0, 0);
+    ellipse(this.x, this.y, 20, 20);
+    pop();
   }
 }

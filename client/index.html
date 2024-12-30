@@ -11,12 +11,15 @@
 			height: 100%;
 		}
 	</style>
+	<!-- Include the p5.js library -->
+	<script src="https://cdn.jsdelivr.net/npm/p5"></script>
+
 </head>
 
 <body>
 	<div style="
         position: absolute;
-        color: white;
+        color: black;
         padding: 8px;
         font-family: sans-serif;
         font-size: 14px;
@@ -24,7 +27,6 @@
       ">
 		<span>Score: <span id="scoreEl">0</span></span>
 	</div>
-	<canvas></canvas>
 
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.10.2/gsap.min.js"
 		integrity="sha512-kVlGhj2qFy+KBCFuvjBJTGUMxbdqJKs4yK2jh0e0VPhWUPiPC87bzm4THmaaIee3Oj7j6sDpTTgm2EPPiESqBg=="
@@ -33,6 +35,7 @@
 	<script src="./Player.js"></script>
 	<script src="./Projectile.js"></script>
 	<script src="./eventListner.js"></script>
+
 </body>
 
 </html>

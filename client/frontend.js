@@ -1,38 +1,49 @@
 const url = "ws://localhost:8000";
 const ws = new WebSocket(url);
 
-const canvas = document.querySelector("canvas");
-const c = canvas.getContext("2d");
-
 const scoreEl = document.querySelector("#scoreEl");
 const devicePixelRatio = window.devicePixelRatio || 1;
 
-canvas.width = innerWidth * devicePixelRatio;
-canvas.height = innerHeight * devicePixelRatio;
+gameWidth = innerWidth * devicePixelRatio;
+gameHeight = innerHeight * devicePixelRatio;
 
-const x = canvas.width / 2;
-const y = canvas.height / 2;
+const x = gameWidth / 2;
+const y = gameHeight / 2;
 
-//const player = new Player(x, y, 10, "white");
 const frontEndPlayers = {};
 const playerInputs = [];
-const frontEndProjectiles = [];
+const frontEndProjectiles = {};
+let angle;
 
-let animationId;
-function animate() {
-  animationId = requestAnimationFrame(animate);
-  c.fillStyle = "rgba(0,0,0,0.1)";
-  c.fillRect(0, 0, canvas.width, canvas.height);
+function setup() {
+  createCanvas(windowWidth, windowHeight);
+  rectMode(CENTER);
+}
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+}
+
+function draw() {
+  background(200); //light gray
   for (const id in frontEndPlayers) {
     const frontEndPlayer = frontEndPlayers[id];
     frontEndPlayer.draw();
+    angle = atan2(mouseY - frontEndPlayer.y, mouseX - frontEndPlayer.x);
+    frontEndPlayer.dangle = angle;
   }
+
+  for (const id in frontEndProjectiles) {
+    const frontEndProjectile = frontEndProjectiles[id];
+    frontEndProjectile.update();
+  }
+  /*
   for (let i = frontEndProjectiles.length - 1; i >= 0; i--) {
     const frontEndProjectile = frontEndProjectiles[i];
     frontEndProjectile.update();
   }
+  */
 }
-animate();
 
 let currentPlayerId = null;
 let pendingInputs = [];
@@ -102,6 +113,27 @@ ws.addEventListener("message", (event) => {
             frontEndPlayers[id].x += input.dx;
           }
         }
+        break;
+
+      case "updateProjectiles":
+        console.log(data);
+        const backEndProjectiles = data.backEndProjectiles || {};
+        for (const id in backEndProjectiles) {
+          const backEndProjectile = backEndProjectiles[id];
+
+          if (!frontEndProjectiles[id]) {
+            frontEndProjectiles[id] = new Projectile({
+              x: backEndProjectile.x,
+              y: backEndProjectile.y,
+              angle: angle,
+              velocity: backEndProjectile.velocity,
+            });
+          } else {
+            frontEndProjectiles[id].x += backEndProjectiles[id].velocity.x;
+            frontEndProjectiles[id].y += backEndProjectiles[id].velocity.y;
+          }
+        }
+        break;
 
       case "updatePlayers":
         const backEndPlayers = data.backEndPlayers || {};
@@ -121,8 +153,8 @@ ws.addEventListener("message", (event) => {
             frontEndPlayers[id] = new Player({
               x: backEndPlayer.x,
               y: backEndPlayer.y,
-              radius: 15,
-              color: backEndPlayer.color,
+              dangle: angle,
+              size: 15,
             });
           }
         }

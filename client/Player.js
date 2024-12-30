@@ -1,22 +1,31 @@
+// p5.js Player Class
+
 class Player {
-  constructor({ x, y, radius, color }) {
+  constructor({ x, y, size }) {
     this.x = x;
     this.y = y;
-    this.radius = radius;
-    this.color = color;
+    this.size = size;
+    this.dangle = 0;
   }
 
   draw() {
-    c.beginPath();
-    c.arc(
-      this.x,
-      this.y,
-      this.radius * window.devicePixelRatio,
-      0,
-      Math.PI * 2,
-      false,
+    push(); // Save current drawing state
+    translate(this.x, this.y); // Move to player's position
+    rotate(this.dangle); // Rotate the player
+
+    // Draw body
+    stroke(51);
+    strokeWeight(3);
+    fill(100);
+    rect(
+      -this.size * 0.75,
+      -this.size * 0.375,
+      this.size * 1.5,
+      this.size * 0.75,
     );
-    c.fillStyle = this.color;
-    c.fill();
+
+    fill(0, 204, 204);
+    ellipse(0, 0, this.size * 2, this.size * 2);
+    pop(); // Restore original drawing state
   }
 }
