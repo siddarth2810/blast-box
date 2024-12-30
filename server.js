@@ -3,20 +3,35 @@ const { v4: uuidv4 } = require("uuid");
 const path = require("path");
 const fs = require("fs");
 
-// Object to hold player data
-const backEndPlayers = {};
-const inputHistory = {};
-
 const PORT = 8000;
 const app = uws.App();
 
-// Ticker function to emit player updates
+const backEndPlayers = {};
+const backEndProjectiles = {};
+const inputHistory = {};
+let projectileId = 0;
+
+// Broadcast updates
 setInterval(() => {
+  for (const id in backEndProjectiles) {
+    const projectile = backEndProjectiles[id];
+    projectile.x += projectile.velocity.x;
+    projectile.y += projectile.velocity.y;
+  }
+
+  app.publish(
+    "updateProjectiles",
+    JSON.stringify({
+      type: "updateProjectiles",
+      backEndProjectiles: backEndProjectiles,
+    }),
+  );
+
   app.publish(
     "updatePlayers",
     JSON.stringify({
       type: "updatePlayers",
-      backEndPlayers: backEndPlayers,
+      backEndPlayers,
     }),
   );
 }, 15);
@@ -26,6 +41,7 @@ app.ws("/*", {
     ws.id = uuidv4().substring(0, 11);
     console.log("Client connected:", ws.id);
 
+    // Create a new player
     backEndPlayers[ws.id] = {
       x: Math.floor(Math.random() * 400 + 100),
       y: Math.floor(Math.random() * 400 + 100),
@@ -33,11 +49,11 @@ app.ws("/*", {
       id: ws.id,
       seqNumber: 0,
     };
-
-    //init input history
     inputHistory[ws.id] = [];
 
+    // make everyone subscribe to players and projectiles
     ws.subscribe("updatePlayers");
+    ws.subscribe("updateProjectiles");
 
     ws.send(
       JSON.stringify({
@@ -48,47 +64,81 @@ app.ws("/*", {
     );
   },
 
-  message: (ws, message, isBinary) => {
+  message: (ws, message) => {
     try {
       const decoder = new TextDecoder("utf-8");
       const decodedMessage = decoder.decode(message);
       const data = JSON.parse(decodedMessage);
 
-      if (data.type === "position") {
-        const player = backEndPlayers[ws.id];
-        if (!player) return;
-        player.seqNumber = data.seqNumber;
+      if (!backEndPlayers[ws.id]) return;
 
-        if (data.x > 15 || data.y > 15) {
-          if (Math.abs(dx) > 15 || Math.abs(dy) > 15) {
-            // Movement might be too large, ignore or clamp
-            dx = clamp(dx);
-            dy = clamp(dy);
-            return;
-          }
+      switch (data.type) {
+        case "position": {
+          const player = backEndPlayers[ws.id];
+          player.seqNumber = data.seqNumber;
+
+          // Basic checks (optional - clamp dx/dy if needed)
+          // Example:
+          // if (Math.abs(data.dx) > 15) data.dx = 15 * Math.sign(data.dx);
+          // if (Math.abs(data.dy) > 15) data.dy = 15 * Math.sign(data.dy);
+
+          player.x += data.dx;
+          player.y += data.dy;
+
+          // Send position to the client that moved
+          ws.send(
+            JSON.stringify({
+              type: "updatePosition",
+              id: ws.id,
+              backEndPlayer: { ...player },
+            }),
+          );
+
+          app.publish(
+            "updatePlayers",
+            JSON.stringify({
+              type: "updatePlayers",
+              backEndPlayers,
+            }),
+          );
+          break;
         }
-        player.x += data.dx;
-        player.y += data.dy;
 
-        //send update to client
-        ws.send(
-          JSON.stringify({
-            id: ws.id,
-            type: "updatePosition",
-            backEndPlayer: backEndPlayers[ws.id],
-            dx: player.dx,
-            dy: player.dy,
-          }),
-        );
+        case "shoot": {
+          projectileId++;
+          const { x, y, angle } = data;
+          const velocity = {
+            x: Math.cos(angle) * 5,
+            y: Math.sin(angle) * 5,
+          };
 
-        //publish
-        app.publish(
-          "updatePlayers",
-          JSON.stringify({
-            type: "updatePlayers",
-            backEndPlayers: backEndPlayers,
-          }),
-        );
+          backEndProjectiles[projectileId] = {
+            x,
+            y,
+            velocity,
+            playerId: ws.id,
+          };
+
+          // Notify this client about projectiles and then broadcast
+          ws.send(
+            JSON.stringify({
+              type: "updateProjectiles",
+              backEndProjectiles,
+            }),
+          );
+
+          app.publish(
+            "updateProjectiles",
+            JSON.stringify({
+              type: "updateProjectiles",
+              backEndProjectiles: backEndProjectiles,
+            }),
+          );
+          break;
+        }
+
+        default:
+          console.log("Unknown message type:", data);
       }
     } catch (error) {
       console.error("Error processing message:", error);
@@ -97,30 +147,21 @@ app.ws("/*", {
 
   close: (ws) => {
     console.log("Client disconnected:", ws.id);
+
+    // Remove the player's data
     delete backEndPlayers[ws.id];
 
     app.publish(
       "updatePlayers",
       JSON.stringify({
         type: "updatePlayers",
-        backEndPlayers: backEndPlayers,
+        backEndPlayers,
       }),
     );
   },
 });
 
-// Function to get content type
-function getContentType(filePath) {
-  const ext = path.extname(filePath).toLowerCase();
-  const types = {
-    ".html": "text/html",
-    ".js": "application/javascript",
-    ".css": "text/css",
-    ".json": "application/json",
-  };
-  return types[ext] || "text/plain";
-}
-
+// Serve static files
 app.get("/*", (res, req) => {
   const urlPath = req.getUrl();
   const filePath = path.join(
@@ -136,7 +177,7 @@ app.get("/*", (res, req) => {
   fs.readFile(filePath, "utf-8", (err, data) => {
     res.cork(() => {
       if (err || !data) {
-        res.end("file not found");
+        res.end("File not found");
       } else {
         const contentType = getContentType(filePath);
         res.writeHeader("Content-Type", contentType);
@@ -146,10 +187,22 @@ app.get("/*", (res, req) => {
   });
 });
 
+// Helper function to determine content type
+function getContentType(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  const types = {
+    ".html": "text/html",
+    ".js": "application/javascript",
+    ".css": "text/css",
+    ".json": "application/json",
+  };
+  return types[ext] || "text/plain";
+}
+
 app.listen(PORT, "0.0.0.0", (token) => {
   if (token) {
-    console.log(`Sockets server started at ${PORT}`);
+    console.log(`Sockets server started at port ${PORT}`);
   } else {
-    console.error("Error in starting server");
+    console.error("Error starting server");
   }
 });
