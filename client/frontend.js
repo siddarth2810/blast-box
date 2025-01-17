@@ -15,6 +15,9 @@ const playerInputs = [];
 const frontEndProjectiles = {};
 let angle;
 
+let currentPlayerId = null;
+let pendingInputs = [];
+
 function setup() {
   createCanvas(windowWidth, windowHeight);
   rectMode(CENTER);
@@ -29,24 +32,27 @@ function draw() {
   for (const id in frontEndPlayers) {
     const frontEndPlayer = frontEndPlayers[id];
     frontEndPlayer.draw();
-    angle = atan2(mouseY - frontEndPlayer.y, mouseX - frontEndPlayer.x);
-    frontEndPlayer.dangle = angle;
+    updateRotationAngle(id, frontEndPlayer);
   }
 
   for (const id in frontEndProjectiles) {
     const frontEndProjectile = frontEndProjectiles[id];
     frontEndProjectile.update();
   }
-  /*
-  for (let i = frontEndProjectiles.length - 1; i >= 0; i--) {
-    const frontEndProjectile = frontEndProjectiles[i];
-    frontEndProjectile.update();
-  }
-  */
 }
 
-let currentPlayerId = null;
-let pendingInputs = [];
+function updateRotationAngle(id, player) {
+  if (id === currentPlayerId) {
+    angle = atan2(mouseY - player.y, mouseX - player.x);
+    player.dangle = angle;
+    ws.send(
+      JSON.stringify({
+        type: "angle",
+        dangle: angle,
+      }),
+    );
+  }
+}
 
 window.addEventListener("keydown", (event) => {
   if (!currentPlayerId || !frontEndPlayers[currentPlayerId]) return;
@@ -89,7 +95,14 @@ ws.addEventListener("message", (event) => {
         console.log("Server says this:", data.message);
         // console.log(frontEndPlayers); //gives empty object
         currentPlayerId = data.id;
-        //console.log(currentPlayerId);
+        ws.send(
+          JSON.stringify({
+            type: "initCanvas",
+            windowWidth,
+            windowHeight,
+            devicePixelRatio,
+          }),
+        );
         break;
 
       case "updatePosition":
@@ -103,11 +116,12 @@ ws.addEventListener("message", (event) => {
           const lastBackendInputIndex = playerInputs.findIndex((input) => {
             return backEndPlayer.seqNumber === input.seqNumber;
           });
+          //delete the acknowledged inputs
           if (lastBackendInputIndex > -1) {
             playerInputs.splice(0, lastBackendInputIndex + 1);
           }
 
-          // Reapply remaining, unacknowledged inputs
+          //loop over unacknowledged inputs and update
           for (const input of pendingInputs) {
             frontEndPlayers[id].y += input.dy;
             frontEndPlayers[id].x += input.dx;
@@ -133,6 +147,13 @@ ws.addEventListener("message", (event) => {
             frontEndProjectiles[id].y += backEndProjectiles[id].velocity.y;
           }
         }
+
+        // Then, remove projectiles that no longer exist on the backend
+        for (const id in frontEndProjectiles) {
+          if (!backEndProjectiles[id]) {
+            delete frontEndProjectiles[id];
+          }
+        }
         break;
 
       case "updatePlayers":
@@ -147,14 +168,15 @@ ws.addEventListener("message", (event) => {
               y: backEndPlayer.y,
               duration: 0.015,
               ease: "linear",
+              dangle: backEndPlayer.dangle,
             });
           } else {
             // Add new players
             frontEndPlayers[id] = new Player({
               x: backEndPlayer.x,
               y: backEndPlayer.y,
-              dangle: angle,
-              size: 15,
+              dangle: backEndPlayer.dangle,
+              size: 20,
             });
           }
         }
