@@ -5,8 +5,8 @@ class Projectile {
     this.angle = angle;
     // Default velocity if none is provided
     this.velocity = velocity || {
-      x: 10 * Math.cos(this.angle),
-      y: 10 * Math.sin(this.angle),
+      x: 3 * Math.cos(this.angle),
+      y: 3 * Math.sin(this.angle),
     };
   }
 
@@ -14,6 +14,7 @@ class Projectile {
     // Move in the direction of velocity
     this.x += this.velocity.x;
     this.y += this.velocity.y;
+
     this.draw();
   }
 
@@ -22,7 +23,7 @@ class Projectile {
     stroke(51); // Gray outline
     strokeWeight(3); // Thick outline
     fill(255, 0, 0);
-    ellipse(this.x, this.y, 20, 20);
+    ellipse(this.x, this.y, 45, 45);
     pop();
   }
 }

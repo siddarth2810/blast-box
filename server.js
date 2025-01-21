@@ -8,33 +8,9 @@ const app = uws.App();
 
 const backEndPlayers = {};
 const backEndProjectiles = {};
-const inputHistory = {};
 let projectileId = 0;
-
-// Broadcast updates
-setInterval(() => {
-  for (const id in backEndProjectiles) {
-    const projectile = backEndProjectiles[id];
-    projectile.x += projectile.velocity.x;
-    projectile.y += projectile.velocity.y;
-  }
-
-  app.publish(
-    "updateProjectiles",
-    JSON.stringify({
-      type: "updateProjectiles",
-      backEndProjectiles: backEndProjectiles,
-    }),
-  );
-
-  app.publish(
-    "updatePlayers",
-    JSON.stringify({
-      type: "updatePlayers",
-      backEndPlayers,
-    }),
-  );
-}, 15);
+let projectileRadius = 5;
+const RADIUS = 10;
 
 app.ws("/*", {
   open: (ws) => {
@@ -48,8 +24,9 @@ app.ws("/*", {
       color: `hsl(${360 * Math.random()}, 100%, 44%)`,
       id: ws.id,
       seqNumber: 0,
+      dangle: 0,
+      //canvas: {width: null, height: null}
     };
-    inputHistory[ws.id] = [];
 
     // make everyone subscribe to players and projectiles
     ws.subscribe("updatePlayers");
@@ -73,6 +50,27 @@ app.ws("/*", {
       if (!backEndPlayers[ws.id]) return;
 
       switch (data.type) {
+        case "initCanvas": {
+          const { windowWidth, windowHeight, devicePixelRatio } = data;
+          backEndPlayers[ws.id].canvas = { windowWidth, windowHeight };
+
+          backEndPlayers[ws.id].radius = RADIUS;
+          if (devicePixelRatio > 1) {
+            backEndPlayers[ws.id].radius = 2 * RADIUS;
+          }
+
+          break;
+        }
+
+        case "angle": {
+          const player = backEndPlayers[ws.id];
+          if (!player) return;
+          // Update server-side angle
+          player.dangle = data.dangle;
+          broadcastPlayers();
+          break;
+        }
+
         case "position": {
           const player = backEndPlayers[ws.id];
           player.seqNumber = data.seqNumber;
@@ -93,14 +91,7 @@ app.ws("/*", {
               backEndPlayer: { ...player },
             }),
           );
-
-          app.publish(
-            "updatePlayers",
-            JSON.stringify({
-              type: "updatePlayers",
-              backEndPlayers,
-            }),
-          );
+          broadcastPlayers();
           break;
         }
 
@@ -108,8 +99,8 @@ app.ws("/*", {
           projectileId++;
           const { x, y, angle } = data;
           const velocity = {
-            x: Math.cos(angle) * 5,
-            y: Math.sin(angle) * 5,
+            x: Math.cos(angle) * 2.7,
+            y: Math.sin(angle) * 2.7,
           };
 
           backEndProjectiles[projectileId] = {
@@ -147,19 +138,75 @@ app.ws("/*", {
 
   close: (ws) => {
     console.log("Client disconnected:", ws.id);
-
     // Remove the player's data
     delete backEndPlayers[ws.id];
-
-    app.publish(
-      "updatePlayers",
-      JSON.stringify({
-        type: "updatePlayers",
-        backEndPlayers,
-      }),
-    );
+    broadcastPlayers();
   },
 });
+
+function broadcastPlayers() {
+  app.publish(
+    "updatePlayers",
+    JSON.stringify({
+      type: "updatePlayers",
+      backEndPlayers,
+    }),
+  );
+}
+
+// Broadcast updates
+setInterval(() => {
+  // Update projectile positions, remove if out-of-bounds
+  for (const id in backEndProjectiles) {
+    const projectile = backEndProjectiles[id];
+    projectile.x += projectile.velocity.x;
+    projectile.y += projectile.velocity.y;
+
+    const canvasWidth = 1920; // default width if player disconnected
+    const canvasHeight = 1080; // default height if player disconnected
+
+    // Check if projectile is out of bounds
+    if (
+      projectile.x < 0 ||
+      projectile.x > canvasWidth ||
+      projectile.y < 0 ||
+      projectile.y > canvasHeight
+    ) {
+      delete backEndProjectiles[id];
+      continue;
+    }
+
+    for (const playerId in backEndPlayers) {
+      const backEndPlayer = backEndPlayers[playerId];
+
+      const distance = Math.hypot(
+        projectile.x - backEndPlayer.x,
+        projectile.y - backEndPlayer.y,
+      );
+
+      if (
+        distance < projectileRadius + backEndPlayer.radius &&
+        projectile.playerId !== playerId
+      ) {
+        // Delete the projectile
+        delete backEndProjectiles[id];
+        delete backEndPlayers[playerId];
+        broadcastPlayers();
+        break;
+      }
+      console.log(distance);
+    }
+  }
+
+  app.publish(
+    "updateProjectiles",
+    JSON.stringify({
+      type: "updateProjectiles",
+      backEndProjectiles: backEndProjectiles,
+    }),
+  );
+  broadcastPlayers();
+}, 10);
 
 // Serve static files
 app.get("/*", (res, req) => {
