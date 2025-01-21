@@ -11,7 +11,6 @@ const x = gameWidth / 2;
 const y = gameHeight / 2;
 
 const frontEndPlayers = {};
-const playerInputs = [];
 const frontEndProjectiles = {};
 let angle;
 
@@ -107,19 +106,15 @@ ws.addEventListener("message", (event) => {
 
       case "updatePosition":
         const { id, x, y, backEndPlayer } = data;
-        if (!frontEndPlayers[id]) return;
         if (id === currentPlayerId) {
           // Update the authoritative position
-          frontEndPlayers[id].x = x;
-          frontEndPlayers[id].y = y;
+          frontEndPlayers[id].x = backEndPlayer.x;
+          frontEndPlayers[id].y = backEndPlayer.y;
 
-          const lastBackendInputIndex = playerInputs.findIndex((input) => {
-            return backEndPlayer.seqNumber === input.seqNumber;
-          });
-          //delete the acknowledged inputs
-          if (lastBackendInputIndex > -1) {
-            playerInputs.splice(0, lastBackendInputIndex + 1);
-          }
+          //removes any inputs whose seqNumber is <= the server-acknowledged seqNumber
+          pendingInputs = pendingInputs.filter(
+            (input) => input.seqNumber > backEndPlayer.seqNumber,
+          );
 
           //loop over unacknowledged inputs and update
           for (const input of pendingInputs) {

@@ -99,8 +99,8 @@ app.ws("/*", {
           projectileId++;
           const { x, y, angle } = data;
           const velocity = {
-            x: Math.cos(angle) * 5,
-            y: Math.sin(angle) * 5,
+            x: Math.cos(angle) * 2.7,
+            y: Math.sin(angle) * 2.7,
           };
 
           backEndProjectiles[projectileId] = {
@@ -161,6 +161,7 @@ setInterval(() => {
     const projectile = backEndProjectiles[id];
     projectile.x += projectile.velocity.x;
     projectile.y += projectile.velocity.y;
+
     const canvasWidth = 1920; // default width if player disconnected
     const canvasHeight = 1080; // default height if player disconnected
 
@@ -190,6 +191,7 @@ setInterval(() => {
         // Delete the projectile
         delete backEndProjectiles[id];
         delete backEndPlayers[playerId];
+        broadcastPlayers();
         break;
       }
       console.log(distance);
@@ -204,7 +206,7 @@ setInterval(() => {
     }),
   );
   broadcastPlayers();
-}, 15);
+}, 10);
 
 // Serve static files
 app.get("/*", (res, req) => {

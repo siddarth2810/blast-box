@@ -15,10 +15,10 @@ class Player {
     stroke(51);
     strokeWeight(3);
     fill(100);
-    rect(this.size, 0, this.size * 1.5, this.size * 0.75); //barrel
+    rect(this.size, 0, this.size * 2.6, this.size * 2.3); //barrel
 
     fill(0, 204, 204);
-    ellipse(0, 0, this.size * 2, this.size * 2);
+    ellipse(0, 0, this.size * 2.6, this.size * 2.6);
     pop(); // Restore original drawing state
   }
 }
