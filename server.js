@@ -22,10 +22,10 @@ app.ws("/*", {
       x: Math.floor(Math.random() * 400 + 100),
       y: Math.floor(Math.random() * 400 + 100),
       color: `hsl(${360 * Math.random()}, 100%, 44%)`,
+      score: 0,
       id: ws.id,
       seqNumber: 0,
       dangle: 0,
-      //canvas: {width: null, height: null}
     };
 
     // make everyone subscribe to players and projectiles
@@ -162,8 +162,8 @@ setInterval(() => {
     projectile.x += projectile.velocity.x;
     projectile.y += projectile.velocity.y;
 
-    const canvasWidth = 1920; // default width if player disconnected
-    const canvasHeight = 1080; // default height if player disconnected
+    const canvasWidth = 1920;
+    const canvasHeight = 1080;
 
     // Check if projectile is out of bounds
     if (
@@ -188,7 +188,9 @@ setInterval(() => {
         distance < projectileRadius + backEndPlayer.radius &&
         projectile.playerId !== playerId
       ) {
-        // Delete the projectile
+        if (backEndPlayers[backEndProjectiles[id].playerId]) {
+          backEndPlayers[backEndProjectiles[id].playerId].score++;
+        }
         delete backEndProjectiles[id];
         delete backEndPlayers[playerId];
         broadcastPlayers();

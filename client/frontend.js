@@ -158,6 +158,13 @@ ws.addEventListener("message", (event) => {
           const backEndPlayer = backEndPlayers[id];
           const frontEndPlayer = frontEndPlayers[id];
           if (frontEndPlayer) {
+            //update score
+            document.querySelector(`div[data-id="${id}"]`).innerHTML =
+              `${id}: ${backEndPlayer.score}`;
+            document
+              .querySelector(`div[data-id="${id}"]`)
+              .setAttribute("data-score", backEndPlayer.score);
+
             gsap.to(frontEndPlayer, {
               x: backEndPlayer.x,
               y: backEndPlayer.y,
@@ -173,11 +180,16 @@ ws.addEventListener("message", (event) => {
               dangle: backEndPlayer.dangle,
               size: 20,
             });
+
+            document.querySelector("#playerLabels").innerHTML +=
+              `<div data-id="${id}" data-score="${backEndPlayer.score}">${backEndPlayer.score}</div>`;
           }
         }
         //loop and delete the front end players to update the site
         for (const id in frontEndPlayers) {
           if (!backEndPlayers[id]) {
+            const divToDelete = document.querySelector(`div[data-id="${id}"]`);
+            divToDelete.parentNode.removeChild(divToDelete);
             delete frontEndPlayers[id];
           }
         }
