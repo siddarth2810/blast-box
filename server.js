@@ -18,19 +18,6 @@ app.ws("/*", {
     console.log("Client connected:", ws.id);
 
     // Create a new player
-    backEndPlayers[ws.id] = {
-      x: Math.floor(Math.random() * 400 + 100),
-      y: Math.floor(Math.random() * 400 + 100),
-      color: `hsl(${360 * Math.random()}, 100%, 44%)`,
-      score: 0,
-      id: ws.id,
-      seqNumber: 0,
-      dangle: 0,
-    };
-
-    // make everyone subscribe to players and projectiles
-    ws.subscribe("updatePlayers");
-    ws.subscribe("updateProjectiles");
 
     ws.send(
       JSON.stringify({
@@ -47,18 +34,31 @@ app.ws("/*", {
       const decodedMessage = decoder.decode(message);
       const data = JSON.parse(decodedMessage);
 
-      if (!backEndPlayers[ws.id]) return;
+      //if (!backEndPlayers[ws.id]) return;
 
       switch (data.type) {
-        case "initCanvas": {
-          const { windowWidth, windowHeight, devicePixelRatio } = data;
-          backEndPlayers[ws.id].canvas = { windowWidth, windowHeight };
+        case "initGame": {
+          const { username, devicePixelRatio } = data;
+          backEndPlayers[ws.id] = {
+            x: Math.floor(Math.random() * 400 + 100),
+            y: Math.floor(Math.random() * 400 + 100),
+            color: `hsl(${360 * Math.random()}, 100%, 44%)`,
+            score: 0,
+            id: ws.id,
+            seqNumber: 0,
+            username: username,
+            dangle: 0,
+          };
 
           backEndPlayers[ws.id].radius = RADIUS;
           if (devicePixelRatio > 1) {
             backEndPlayers[ws.id].radius = 2 * RADIUS;
           }
-
+          // make everyone subscribe to players and projectiles
+          ws.subscribe("updatePlayers");
+          ws.subscribe("updateProjectiles");
+          console.log(username);
+          broadcastPlayers();
           break;
         }
 
@@ -96,6 +96,7 @@ app.ws("/*", {
         }
 
         case "shoot": {
+          if (!backEndPlayers[ws.id]) return;
           projectileId++;
           const { x, y, angle } = data;
           const velocity = {
@@ -196,7 +197,7 @@ setInterval(() => {
         broadcastPlayers();
         break;
       }
-      console.log(distance);
+      //console.log(distance);
     }
   }
 

@@ -91,21 +91,26 @@ ws.addEventListener("message", (event) => {
 
     switch (data.type) {
       case "welcome":
-        console.log("Server says this:", data.message);
-        // console.log(frontEndPlayers); //gives empty object
         currentPlayerId = data.id;
-        ws.send(
-          JSON.stringify({
-            type: "initCanvas",
-            windowWidth,
-            windowHeight,
-            devicePixelRatio,
-          }),
-        );
+        document
+          .querySelector("#usernameForm")
+          .addEventListener("submit", (event) => {
+            event.preventDefault();
+            const username = document.querySelector("#usernameInput").value;
+            document.querySelector("#usernameForm").style.display = "none";
+            ws.send(
+              JSON.stringify({
+                type: "initGame",
+                username: username,
+                devicePixelRatio,
+              }),
+            );
+          });
+        console.log("Server says this:", data.message);
         break;
 
       case "updatePosition":
-        const { id, x, y, backEndPlayer } = data;
+        const { id, backEndPlayer } = data;
         if (id === currentPlayerId) {
           // Update the authoritative position
           frontEndPlayers[id].x = backEndPlayer.x;
@@ -125,7 +130,7 @@ ws.addEventListener("message", (event) => {
         break;
 
       case "updateProjectiles":
-        console.log(data);
+        //console.log(data);
         const backEndProjectiles = data.backEndProjectiles || {};
         for (const id in backEndProjectiles) {
           const backEndProjectile = backEndProjectiles[id];
@@ -160,7 +165,7 @@ ws.addEventListener("message", (event) => {
           if (frontEndPlayer) {
             //update score
             document.querySelector(`div[data-id="${id}"]`).innerHTML =
-              `${id}: ${backEndPlayer.score}`;
+              `${backEndPlayer.username}: ${backEndPlayer.score}`;
             document
               .querySelector(`div[data-id="${id}"]`)
               .setAttribute("data-score", backEndPlayer.score);
@@ -177,12 +182,13 @@ ws.addEventListener("message", (event) => {
             frontEndPlayers[id] = new Player({
               x: backEndPlayer.x,
               y: backEndPlayer.y,
+              username: backEndPlayer.username,
               dangle: backEndPlayer.dangle,
               size: 20,
             });
 
             document.querySelector("#playerLabels").innerHTML +=
-              `<div data-id="${id}" data-score="${backEndPlayer.score}">${backEndPlayer.score}</div>`;
+              `<div data-id="${id}" data-score="${backEndPlayer.score}">${backEndPlayer.username}: ${backEndPlayer.score}</div>`;
           }
         }
         //loop and delete the front end players to update the site
