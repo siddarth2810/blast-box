@@ -18,19 +18,6 @@ app.ws("/*", {
     console.log("Client connected:", ws.id);
 
     // Create a new player
-    backEndPlayers[ws.id] = {
-      x: Math.floor(Math.random() * 400 + 100),
-      y: Math.floor(Math.random() * 400 + 100),
-      color: `hsl(${360 * Math.random()}, 100%, 44%)`,
-      id: ws.id,
-      seqNumber: 0,
-      dangle: 0,
-      //canvas: {width: null, height: null}
-    };
-
-    // make everyone subscribe to players and projectiles
-    ws.subscribe("updatePlayers");
-    ws.subscribe("updateProjectiles");
 
     ws.send(
       JSON.stringify({
@@ -47,18 +34,31 @@ app.ws("/*", {
       const decodedMessage = decoder.decode(message);
       const data = JSON.parse(decodedMessage);
 
-      if (!backEndPlayers[ws.id]) return;
+      //if (!backEndPlayers[ws.id]) return;
 
       switch (data.type) {
-        case "initCanvas": {
-          const { windowWidth, windowHeight, devicePixelRatio } = data;
-          backEndPlayers[ws.id].canvas = { windowWidth, windowHeight };
+        case "initGame": {
+          const { username, devicePixelRatio } = data;
+          backEndPlayers[ws.id] = {
+            x: Math.floor(Math.random() * 400 + 100),
+            y: Math.floor(Math.random() * 400 + 100),
+            color: `hsl(${360 * Math.random()}, 100%, 44%)`,
+            score: 0,
+            id: ws.id,
+            seqNumber: 0,
+            username: username,
+            dangle: 0,
+          };
 
           backEndPlayers[ws.id].radius = RADIUS;
           if (devicePixelRatio > 1) {
             backEndPlayers[ws.id].radius = 2 * RADIUS;
           }
-
+          // make everyone subscribe to players and projectiles
+          ws.subscribe("updatePlayers");
+          ws.subscribe("updateProjectiles");
+          console.log(username);
+          broadcastPlayers();
           break;
         }
 
@@ -96,6 +96,7 @@ app.ws("/*", {
         }
 
         case "shoot": {
+          if (!backEndPlayers[ws.id]) return;
           projectileId++;
           const { x, y, angle } = data;
           const velocity = {
@@ -162,8 +163,8 @@ setInterval(() => {
     projectile.x += projectile.velocity.x;
     projectile.y += projectile.velocity.y;
 
-    const canvasWidth = 1920; // default width if player disconnected
-    const canvasHeight = 1080; // default height if player disconnected
+    const canvasWidth = 1920;
+    const canvasHeight = 1080;
 
     // Check if projectile is out of bounds
     if (
@@ -188,13 +189,15 @@ setInterval(() => {
         distance < projectileRadius + backEndPlayer.radius &&
         projectile.playerId !== playerId
       ) {
-        // Delete the projectile
+        if (backEndPlayers[backEndProjectiles[id].playerId]) {
+          backEndPlayers[backEndProjectiles[id].playerId].score++;
+        }
         delete backEndProjectiles[id];
         delete backEndPlayers[playerId];
         broadcastPlayers();
         break;
       }
-      console.log(distance);
+      //console.log(distance);
     }
   }
 

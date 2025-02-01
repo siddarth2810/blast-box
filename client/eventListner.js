@@ -1,4 +1,9 @@
 addEventListener("click", (event) => {
+  if (!currentPlayerId || !frontEndPlayers[currentPlayerId]) {
+    console.log("Player not initialized yet");
+    return;
+  }
+
   const playerPosition = {
     x: frontEndPlayers[currentPlayerId].x,
     y: frontEndPlayers[currentPlayerId].y,
