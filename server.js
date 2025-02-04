@@ -6,18 +6,46 @@ const fs = require("fs");
 const PORT = 8000;
 const app = uws.App();
 
+// Game state
 const backEndPlayers = {};
 const backEndProjectiles = {};
 let projectileId = 0;
-let projectileRadius = 5;
-const RADIUS = 10;
 
+// Constants
+const TICK_RATE = 60;
+const TICK_INTERVAL = 1000 / TICK_RATE;
+const PLAYER_RADIUS = 10;
+const PROJECTILE_RADIUS = 5;
+const MAX_PLAYER_SPEED = 300; // units per second
+const CANVAS_WIDTH = 1920;
+const CANVAS_HEIGHT = 1080;
+
+// Utility functions
+function validateMovement(dx, dy, deltaTime) {
+  const maxDelta = MAX_PLAYER_SPEED * deltaTime;
+  const magnitude = Math.sqrt(dx * dx + dy * dy);
+
+  if (magnitude > maxDelta) {
+    const scale = maxDelta / magnitude;
+    return {
+      dx: dx * scale,
+      dy: dy * scale,
+    };
+  }
+
+  return { dx, dy };
+}
+
+function isColliding(x1, y1, r1, x2, y2, r2) {
+  const distance = Math.hypot(x2 - x1, y2 - y1);
+  return distance < r1 + r2;
+}
+
+// WebSocket handlers
 app.ws("/*", {
   open: (ws) => {
     ws.id = uuidv4().substring(0, 11);
     console.log("Client connected:", ws.id);
-
-    // Create a new player
 
     ws.send(
       JSON.stringify({
@@ -34,84 +62,97 @@ app.ws("/*", {
       const decodedMessage = decoder.decode(message);
       const data = JSON.parse(decodedMessage);
 
-      //if (!backEndPlayers[ws.id]) return;
-
       switch (data.type) {
         case "initGame": {
           const { username, devicePixelRatio } = data;
+
           backEndPlayers[ws.id] = {
-            x: Math.floor(Math.random() * 400 + 100),
-            y: Math.floor(Math.random() * 400 + 100),
+            x: Math.floor(Math.random() * (CANVAS_WIDTH - 200) + 100),
+            y: Math.floor(Math.random() * (CANVAS_HEIGHT - 200) + 100),
             color: `hsl(${360 * Math.random()}, 100%, 44%)`,
             score: 0,
             id: ws.id,
             seqNumber: 0,
             username: username,
             dangle: 0,
+            radius: devicePixelRatio > 1 ? 2 * PLAYER_RADIUS : PLAYER_RADIUS,
+            lastProcessedInput: 0,
           };
 
-          backEndPlayers[ws.id].radius = RADIUS;
-          if (devicePixelRatio > 1) {
-            backEndPlayers[ws.id].radius = 2 * RADIUS;
-          }
-          // make everyone subscribe to players and projectiles
           ws.subscribe("updatePlayers");
           ws.subscribe("updateProjectiles");
-          console.log(username);
-          broadcastPlayers();
-          break;
-        }
 
-        case "angle": {
-          const player = backEndPlayers[ws.id];
-          if (!player) return;
-          // Update server-side angle
-          player.dangle = data.dangle;
           broadcastPlayers();
           break;
         }
 
         case "position": {
           const player = backEndPlayers[ws.id];
+          if (!player) return;
+
+          const now = Date.now();
+          const deltaTime = (now - (player.lastUpdateTime || now)) / 1000;
+          player.lastUpdateTime = now;
+
+          // Validate and adjust movement
+          const { dx, dy } = validateMovement(data.dx, data.dy, deltaTime);
+
+          // Update player position
+          player.x = Math.max(
+            player.radius,
+            Math.min(CANVAS_WIDTH - player.radius, player.x + dx),
+          );
+          player.y = Math.max(
+            player.radius,
+            Math.min(CANVAS_HEIGHT - player.radius, player.y + dy),
+          );
+
+          // Update sequence number
           player.seqNumber = data.seqNumber;
 
-          // Basic checks (optional - clamp dx/dy if needed)
-          // Example:
-          // if (Math.abs(data.dx) > 15) data.dx = 15 * Math.sign(data.dx);
-          // if (Math.abs(data.dy) > 15) data.dy = 15 * Math.sign(data.dy);
-
-          player.x += data.dx;
-          player.y += data.dy;
-
-          // Send position to the client that moved
+          // Send immediate position update to the moving player
           ws.send(
             JSON.stringify({
               type: "updatePosition",
               id: ws.id,
-              backEndPlayer: { ...player },
+              backEndPlayer: {
+                x: player.x,
+                y: player.y,
+                seqNumber: player.seqNumber,
+              },
             }),
           );
-          broadcastPlayers();
+
+          break;
+        }
+
+        case "angle": {
+          const player = backEndPlayers[ws.id];
+          if (!player) return;
+
+          player.dangle = data.dangle;
           break;
         }
 
         case "shoot": {
-          if (!backEndPlayers[ws.id]) return;
+          const player = backEndPlayers[ws.id];
+          if (!player) return;
+
           projectileId++;
-          const { x, y, angle } = data;
           const velocity = {
-            x: Math.cos(angle) * 2.7,
-            y: Math.sin(angle) * 2.7,
+            x: Math.cos(data.angle) * 2.7,
+            y: Math.sin(data.angle) * 2.7,
           };
 
           backEndProjectiles[projectileId] = {
-            x,
-            y,
+            x: data.x,
+            y: data.y,
             velocity,
             playerId: ws.id,
+            createdAt: Date.now(),
           };
 
-          // Notify this client about projectiles and then broadcast
+          // Notify shooter about their projectile
           ws.send(
             JSON.stringify({
               type: "updateProjectiles",
@@ -119,18 +160,16 @@ app.ws("/*", {
             }),
           );
 
+          // Broadcast projectile to all players
           app.publish(
             "updateProjectiles",
             JSON.stringify({
               type: "updateProjectiles",
-              backEndProjectiles: backEndProjectiles,
+              backEndProjectiles,
             }),
           );
           break;
         }
-
-        default:
-          console.log("Unknown message type:", data);
       }
     } catch (error) {
       console.error("Error processing message:", error);
@@ -139,7 +178,6 @@ app.ws("/*", {
 
   close: (ws) => {
     console.log("Client disconnected:", ws.id);
-    // Remove the player's data
     delete backEndPlayers[ws.id];
     broadcastPlayers();
   },
@@ -155,63 +193,71 @@ function broadcastPlayers() {
   );
 }
 
-// Broadcast updates
+// Game loop
 setInterval(() => {
-  // Update projectile positions, remove if out-of-bounds
+  // Update projectiles
   for (const id in backEndProjectiles) {
     const projectile = backEndProjectiles[id];
+
+    // Update position
     projectile.x += projectile.velocity.x;
     projectile.y += projectile.velocity.y;
 
-    const canvasWidth = 1920;
-    const canvasHeight = 1080;
-
-    // Check if projectile is out of bounds
+    // Remove if out of bounds
     if (
       projectile.x < 0 ||
-      projectile.x > canvasWidth ||
+      projectile.x > CANVAS_WIDTH ||
       projectile.y < 0 ||
-      projectile.y > canvasHeight
+      projectile.y > CANVAS_HEIGHT ||
+      Date.now() - projectile.createdAt > 5000 // Remove after 5 seconds
     ) {
       delete backEndProjectiles[id];
       continue;
     }
 
+    // Check collisions with players
     for (const playerId in backEndPlayers) {
-      const backEndPlayer = backEndPlayers[playerId];
-
-      const distance = Math.hypot(
-        projectile.x - backEndPlayer.x,
-        projectile.y - backEndPlayer.y,
-      );
+      const player = backEndPlayers[playerId];
 
       if (
-        distance < projectileRadius + backEndPlayer.radius &&
-        projectile.playerId !== playerId
+        projectile.playerId !== playerId && // Can't hit self
+        isColliding(
+          projectile.x,
+          projectile.y,
+          PROJECTILE_RADIUS,
+          player.x,
+          player.y,
+          player.radius,
+        )
       ) {
-        if (backEndPlayers[backEndProjectiles[id].playerId]) {
-          backEndPlayers[backEndProjectiles[id].playerId].score++;
+        // Update shooter's score if they're still in game
+        if (backEndPlayers[projectile.playerId]) {
+          backEndPlayers[projectile.playerId].score++;
         }
+
+        // Remove hit player and projectile
         delete backEndProjectiles[id];
         delete backEndPlayers[playerId];
+
         broadcastPlayers();
         break;
       }
-      //console.log(distance);
     }
   }
 
+  // Broadcast updates
   app.publish(
     "updateProjectiles",
     JSON.stringify({
       type: "updateProjectiles",
-      backEndProjectiles: backEndProjectiles,
+      backEndProjectiles,
     }),
   );
-  broadcastPlayers();
-}, 10);
 
-// Serve static files
+  broadcastPlayers();
+}, TICK_INTERVAL);
+
+// Static file serving
 app.get("/*", (res, req) => {
   const urlPath = req.getUrl();
   const filePath = path.join(
@@ -237,7 +283,6 @@ app.get("/*", (res, req) => {
   });
 });
 
-// Helper function to determine content type
 function getContentType(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   const types = {
@@ -251,7 +296,7 @@ function getContentType(filePath) {
 
 app.listen(PORT, "0.0.0.0", (token) => {
   if (token) {
-    console.log(`Sockets server started at port ${PORT}`);
+    console.log(`Game server started at port ${PORT}`);
   } else {
     console.error("Error starting server");
   }

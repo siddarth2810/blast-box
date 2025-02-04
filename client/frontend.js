@@ -4,18 +4,35 @@ const ws = new WebSocket(url);
 const scoreEl = document.querySelector("#scoreEl");
 const devicePixelRatio = window.devicePixelRatio || 1;
 
-gameWidth = innerWidth * devicePixelRatio;
-gameHeight = innerHeight * devicePixelRatio;
+// Game dimensions
+const gameWidth = innerWidth * devicePixelRatio;
+const gameHeight = innerHeight * devicePixelRatio;
 
-const x = gameWidth / 2;
-const y = gameHeight / 2;
-
+// Game state variables
 const frontEndPlayers = {};
 const frontEndProjectiles = {};
-let angle;
-
 let currentPlayerId = null;
-let pendingInputs = [];
+let angle = 0;
+let seqNumber = 0;
+let lastUpdateTime = performance.now();
+
+// Input handling
+const keys = {
+  w: false,
+  s: false,
+  a: false,
+  d: false,
+};
+
+// Constants
+const INTERPOLATION_FACTOR = 0.2;
+const INPUT_BUFFER_SIZE = 8;
+let inputBuffer = [];
+
+// Utility functions
+function lerp(start, end, t) {
+  return start * (1 - t) + end * t;
+}
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
@@ -26,18 +43,91 @@ function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
 }
 
+// Main game loop
 function draw() {
-  background(200); //light gray
+  const currentTime = performance.now();
+  const deltaTime = (currentTime - lastUpdateTime) / 1000; // Convert to seconds
+  lastUpdateTime = currentTime;
+
+  update(deltaTime);
+  render();
+}
+
+function update(deltaTime) {
+  // Update local player position with delta time
+  if (currentPlayerId && frontEndPlayers[currentPlayerId]) {
+    const player = frontEndPlayers[currentPlayerId];
+    const speed = 300 * deltaTime; // Units per second
+    let dx = 0;
+    let dy = 0;
+
+    if (keys.w) dy -= speed;
+    if (keys.s) dy += speed;
+    if (keys.a) dx -= speed;
+    if (keys.d) dx += speed;
+
+    if (dx !== 0 || dy !== 0) {
+      processInput({ dx, dy });
+    }
+  }
+
+  // Update other players' positions with interpolation
+  for (const id in frontEndPlayers) {
+    if (id !== currentPlayerId) {
+      const player = frontEndPlayers[id];
+      if (player.targetX !== undefined) {
+        player.x = lerp(player.x, player.targetX, INTERPOLATION_FACTOR);
+        player.y = lerp(player.y, player.targetY, INTERPOLATION_FACTOR);
+      }
+    }
+  }
+
+  // Update projectiles
+  for (const id in frontEndProjectiles) {
+    const frontEndProjectile = frontEndProjectiles[id];
+    frontEndProjectile.update();
+  }
+}
+
+function render() {
+  background(200);
+
+  // Draw players
   for (const id in frontEndPlayers) {
     const frontEndPlayer = frontEndPlayers[id];
     frontEndPlayer.draw();
     updateRotationAngle(id, frontEndPlayer);
   }
 
+  // Draw projectiles
   for (const id in frontEndProjectiles) {
     const frontEndProjectile = frontEndProjectiles[id];
-    frontEndProjectile.update();
+    frontEndProjectile.draw();
   }
+}
+
+function processInput(input) {
+  inputBuffer.push(input);
+  if (inputBuffer.length > INPUT_BUFFER_SIZE) {
+    inputBuffer.shift();
+  }
+
+  // Apply prediction
+  const player = frontEndPlayers[currentPlayerId];
+  player.x += input.dx;
+  player.y += input.dy;
+
+  // Send to server
+  seqNumber++;
+  ws.send(
+    JSON.stringify({
+      type: "position",
+      dx: input.dx,
+      dy: input.dy,
+      seqNumber: seqNumber,
+      timestamp: Date.now(),
+    }),
+  );
 }
 
 function updateRotationAngle(id, player) {
@@ -53,38 +143,52 @@ function updateRotationAngle(id, player) {
   }
 }
 
+// Input event listeners
 window.addEventListener("keydown", (event) => {
   if (!currentPlayerId || !frontEndPlayers[currentPlayerId]) return;
 
-  const speed = 15;
-  let seqNumber = 0;
-  let dx = 0,
-    dy = 0;
-  if (event.code === "KeyW" || event.code === "ArrowUp") dy = -speed;
-  if (event.code === "KeyS" || event.code === "ArrowDown") dy = speed;
-  if (event.code === "KeyA" || event.code === "ArrowLeft") dx = -speed;
-  if (event.code === "KeyD" || event.code === "ArrowRight") dx = speed;
-
-  if (dx !== 0 || dy !== 0) {
-    seqNumber++;
-    pendingInputs.push({ seqNumber, dx, dy });
-
-    // Client-Side Prediction
-    const player = frontEndPlayers[currentPlayerId];
-    player.x += dx;
-    player.y += dy;
-
-    ws.send(
-      JSON.stringify({
-        type: "position",
-        seqNumber: seqNumber,
-        dx: dx,
-        dy: dy,
-      }),
-    );
+  switch (event.code) {
+    case "KeyW":
+    case "ArrowUp":
+      keys.w = true;
+      break;
+    case "KeyS":
+    case "ArrowDown":
+      keys.s = true;
+      break;
+    case "KeyA":
+    case "ArrowLeft":
+      keys.a = true;
+      break;
+    case "KeyD":
+    case "ArrowRight":
+      keys.d = true;
+      break;
   }
 });
 
+window.addEventListener("keyup", (event) => {
+  switch (event.code) {
+    case "KeyW":
+    case "ArrowUp":
+      keys.w = false;
+      break;
+    case "KeyS":
+    case "ArrowDown":
+      keys.s = false;
+      break;
+    case "KeyA":
+    case "ArrowLeft":
+      keys.a = false;
+      break;
+    case "KeyD":
+    case "ArrowRight":
+      keys.d = false;
+      break;
+  }
+});
+
+// WebSocket event handlers
 ws.addEventListener("message", (event) => {
   try {
     const data = JSON.parse(event.data);
@@ -106,7 +210,6 @@ ws.addEventListener("message", (event) => {
               }),
             );
           });
-        console.log("Server says this:", data.message);
         break;
 
       case "updatePosition":
@@ -116,22 +219,23 @@ ws.addEventListener("message", (event) => {
           frontEndPlayers[id].x = backEndPlayer.x;
           frontEndPlayers[id].y = backEndPlayer.y;
 
-          //removes any inputs whose seqNumber is <= the server-acknowledged seqNumber
-          pendingInputs = pendingInputs.filter(
+          // Remove processed inputs
+          inputBuffer = inputBuffer.filter(
             (input) => input.seqNumber > backEndPlayer.seqNumber,
           );
 
-          //loop over unacknowledged inputs and update
-          for (const input of pendingInputs) {
-            frontEndPlayers[id].y += input.dy;
+          // Reapply remaining inputs
+          for (const input of inputBuffer) {
             frontEndPlayers[id].x += input.dx;
+            frontEndPlayers[id].y += input.dy;
           }
         }
         break;
 
       case "updateProjectiles":
-        //console.log(data);
         const backEndProjectiles = data.backEndProjectiles || {};
+
+        // Update existing projectiles and add new ones
         for (const id in backEndProjectiles) {
           const backEndProjectile = backEndProjectiles[id];
 
@@ -148,7 +252,7 @@ ws.addEventListener("message", (event) => {
           }
         }
 
-        // Then, remove projectiles that no longer exist on the backend
+        // Remove defunct projectiles
         for (const id in frontEndProjectiles) {
           if (!backEndProjectiles[id]) {
             delete frontEndProjectiles[id];
@@ -158,27 +262,30 @@ ws.addEventListener("message", (event) => {
 
       case "updatePlayers":
         const backEndPlayers = data.backEndPlayers || {};
+
         // Update or add players
         for (const id in backEndPlayers) {
           const backEndPlayer = backEndPlayers[id];
           const frontEndPlayer = frontEndPlayers[id];
+
           if (frontEndPlayer) {
-            //update score
+            // Update score
             document.querySelector(`div[data-id="${id}"]`).innerHTML =
               `${backEndPlayer.username}: ${backEndPlayer.score}`;
             document
               .querySelector(`div[data-id="${id}"]`)
               .setAttribute("data-score", backEndPlayer.score);
 
-            gsap.to(frontEndPlayer, {
-              x: backEndPlayer.x,
-              y: backEndPlayer.y,
-              duration: 0.015,
-              ease: "linear",
-              dangle: backEndPlayer.dangle,
-            });
+            if (id === currentPlayerId) {
+              frontEndPlayer.dangle = backEndPlayer.dangle;
+            } else {
+              // Store target positions for interpolation
+              frontEndPlayer.targetX = backEndPlayer.x;
+              frontEndPlayer.targetY = backEndPlayer.y;
+              frontEndPlayer.dangle = backEndPlayer.dangle;
+            }
           } else {
-            // Add new players
+            // Add new player
             frontEndPlayers[id] = new Player({
               x: backEndPlayer.x,
               y: backEndPlayer.y,
@@ -191,7 +298,8 @@ ws.addEventListener("message", (event) => {
               `<div data-id="${id}" data-score="${backEndPlayer.score}">${backEndPlayer.username}: ${backEndPlayer.score}</div>`;
           }
         }
-        //loop and delete the front end players to update the site
+
+        // Remove disconnected players
         for (const id in frontEndPlayers) {
           if (!backEndPlayers[id]) {
             const divToDelete = document.querySelector(`div[data-id="${id}"]`);
@@ -199,7 +307,6 @@ ws.addEventListener("message", (event) => {
             delete frontEndPlayers[id];
           }
         }
-        //console.log(frontEndPlayers);
         break;
 
       default:
