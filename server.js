@@ -6,47 +6,19 @@ const fs = require("fs");
 const PORT = 8000;
 const app = uws.App();
 
-// Game state
 const backEndPlayers = {};
 const backEndProjectiles = {};
+
 let projectileId = 0;
-
-// Constants
-const TICK_RATE = 60;
-const TICK_INTERVAL = 1000 / TICK_RATE;
+let projectileRadius = 5;
 const PLAYER_RADIUS = 10;
-const PROJECTILE_RADIUS = 5;
-const MAX_PLAYER_SPEED = 300; // units per second
-const CANVAS_WIDTH = 1920;
-const CANVAS_HEIGHT = 1080;
+const canvasWidth = 1920;
+const canvasHeight = 1080;
 
-// Utility functions
-function validateMovement(dx, dy, deltaTime) {
-  const maxDelta = MAX_PLAYER_SPEED * deltaTime;
-  const magnitude = Math.sqrt(dx * dx + dy * dy);
-
-  if (magnitude > maxDelta) {
-    const scale = maxDelta / magnitude;
-    return {
-      dx: dx * scale,
-      dy: dy * scale,
-    };
-  }
-
-  return { dx, dy };
-}
-
-function isColliding(x1, y1, r1, x2, y2, r2) {
-  const distance = Math.hypot(x2 - x1, y2 - y1);
-  return distance < r1 + r2;
-}
-
-// WebSocket handlers
 app.ws("/*", {
   open: (ws) => {
     ws.id = uuidv4().substring(0, 11);
     console.log("Client connected:", ws.id);
-
     ws.send(
       JSON.stringify({
         type: "welcome",
@@ -67,21 +39,21 @@ app.ws("/*", {
           const { username, devicePixelRatio } = data;
 
           backEndPlayers[ws.id] = {
-            x: Math.floor(Math.random() * (CANVAS_WIDTH - 200) + 100),
-            y: Math.floor(Math.random() * (CANVAS_HEIGHT - 200) + 100),
+            x: Math.floor(Math.random() * 400 + 100),
+            y: Math.floor(Math.random() * 400 + 100),
             color: `hsl(${360 * Math.random()}, 100%, 44%)`,
             score: 0,
             id: ws.id,
+            radius: devicePixelRatio > 1 ? 2 * PLAYER_RADIUS : PLAYER_RADIUS,
             seqNumber: 0,
             username: username,
             dangle: 0,
-            radius: devicePixelRatio > 1 ? 2 * PLAYER_RADIUS : PLAYER_RADIUS,
-            lastProcessedInput: 0,
           };
 
+          // make everyone subscribe to players and projectiles
           ws.subscribe("updatePlayers");
           ws.subscribe("updateProjectiles");
-
+          console.log(username);
           broadcastPlayers();
           break;
         }
@@ -89,40 +61,20 @@ app.ws("/*", {
         case "position": {
           const player = backEndPlayers[ws.id];
           if (!player) return;
-
-          const now = Date.now();
-          const deltaTime = (now - (player.lastUpdateTime || now)) / 1000;
-          player.lastUpdateTime = now;
-
-          // Validate and adjust movement
-          const { dx, dy } = validateMovement(data.dx, data.dy, deltaTime);
-
-          // Update player position
-          player.x = Math.max(
-            player.radius,
-            Math.min(CANVAS_WIDTH - player.radius, player.x + dx),
-          );
-          player.y = Math.max(
-            player.radius,
-            Math.min(CANVAS_HEIGHT - player.radius, player.y + dy),
-          );
-
-          // Update sequence number
           player.seqNumber = data.seqNumber;
 
-          // Send immediate position update to the moving player
+          player.x += data.dx;
+          player.y += data.dy;
+
+          // Send position to the client that moved
           ws.send(
             JSON.stringify({
               type: "updatePosition",
               id: ws.id,
-              backEndPlayer: {
-                x: player.x,
-                y: player.y,
-                seqNumber: player.seqNumber,
-              },
+              backEndPlayer: { ...player },
             }),
           );
-
+          broadcastPlayers();
           break;
         }
 
@@ -130,29 +82,30 @@ app.ws("/*", {
           const player = backEndPlayers[ws.id];
           if (!player) return;
 
+          // Update server-side angle
           player.dangle = data.dangle;
+          broadcastPlayers();
           break;
         }
 
         case "shoot": {
-          const player = backEndPlayers[ws.id];
-          if (!player) return;
+          if (!backEndPlayers[ws.id]) return;
 
           projectileId++;
+          const { x, y, angle } = data;
           const velocity = {
-            x: Math.cos(data.angle) * 2.7,
-            y: Math.sin(data.angle) * 2.7,
+            x: Math.cos(angle) * 2.7,
+            y: Math.sin(angle) * 2.7,
           };
 
           backEndProjectiles[projectileId] = {
-            x: data.x,
-            y: data.y,
+            x,
+            y,
             velocity,
             playerId: ws.id,
-            createdAt: Date.now(),
           };
 
-          // Notify shooter about their projectile
+          // Notify this client about projectiles and then broadcast
           ws.send(
             JSON.stringify({
               type: "updateProjectiles",
@@ -160,16 +113,18 @@ app.ws("/*", {
             }),
           );
 
-          // Broadcast projectile to all players
           app.publish(
             "updateProjectiles",
             JSON.stringify({
               type: "updateProjectiles",
-              backEndProjectiles,
+              backEndProjectiles: backEndProjectiles,
             }),
           );
           break;
         }
+
+        default:
+          console.log("Unknown message type:", data);
       }
     } catch (error) {
       console.error("Error processing message:", error);
@@ -178,6 +133,7 @@ app.ws("/*", {
 
   close: (ws) => {
     console.log("Client disconnected:", ws.id);
+    // Remove the player's data
     delete backEndPlayers[ws.id];
     broadcastPlayers();
   },
@@ -189,75 +145,65 @@ function broadcastPlayers() {
     JSON.stringify({
       type: "updatePlayers",
       backEndPlayers,
+      timestamp: Date.now(),
     }),
   );
 }
 
-// Game loop
+// Broadcast updates
 setInterval(() => {
-  // Update projectiles
+  // Update projectile positions, remove if out-of-bounds
   for (const id in backEndProjectiles) {
     const projectile = backEndProjectiles[id];
-
-    // Update position
     projectile.x += projectile.velocity.x;
     projectile.y += projectile.velocity.y;
 
-    // Remove if out of bounds
+    // Check if projectile is out of bounds
     if (
       projectile.x < 0 ||
-      projectile.x > CANVAS_WIDTH ||
+      projectile.x > canvasWidth ||
       projectile.y < 0 ||
-      projectile.y > CANVAS_HEIGHT ||
-      Date.now() - projectile.createdAt > 5000 // Remove after 5 seconds
+      projectile.y > canvasHeight
     ) {
       delete backEndProjectiles[id];
       continue;
     }
 
-    // Check collisions with players
     for (const playerId in backEndPlayers) {
-      const player = backEndPlayers[playerId];
+      const backEndPlayer = backEndPlayers[playerId];
+
+      const distance = Math.hypot(
+        projectile.x - backEndPlayer.x,
+        projectile.y - backEndPlayer.y,
+      );
 
       if (
-        projectile.playerId !== playerId && // Can't hit self
-        isColliding(
-          projectile.x,
-          projectile.y,
-          PROJECTILE_RADIUS,
-          player.x,
-          player.y,
-          player.radius,
-        )
+        distance < projectileRadius + backEndPlayer.radius &&
+        projectile.playerId !== playerId
       ) {
-        // Update shooter's score if they're still in game
-        if (backEndPlayers[projectile.playerId]) {
-          backEndPlayers[projectile.playerId].score++;
+        if (backEndPlayers[backEndProjectiles[id].playerId]) {
+          backEndPlayers[backEndProjectiles[id].playerId].score++;
         }
-
-        // Remove hit player and projectile
         delete backEndProjectiles[id];
         delete backEndPlayers[playerId];
-
         broadcastPlayers();
         break;
       }
+      //console.log(distance);
     }
   }
 
-  // Broadcast updates
   app.publish(
     "updateProjectiles",
     JSON.stringify({
       type: "updateProjectiles",
-      backEndProjectiles,
+      backEndProjectiles: backEndProjectiles,
     }),
   );
-
   broadcastPlayers();
-}, TICK_INTERVAL);
+}, 10);
 
-// Static file serving
+// Serve static files
 app.get("/*", (res, req) => {
   const urlPath = req.getUrl();
   const filePath = path.join(
@@ -283,6 +229,7 @@ app.get("/*", (res, req) => {
   });
 });
 
+// Helper function to determine content type
 function getContentType(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   const types = {
@@ -296,7 +243,7 @@ function getContentType(filePath) {
 
 app.listen(PORT, "0.0.0.0", (token) => {
   if (token) {
-    console.log(`Game server started at port ${PORT}`);
+    console.log(`Sockets server started at port ${PORT}`);
   } else {
     console.error("Error starting server");
   }
