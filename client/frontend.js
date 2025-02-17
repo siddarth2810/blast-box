@@ -5,8 +5,8 @@ const ws = new WebSocket(url);
 const scoreEl = document.querySelector("#scoreEl");
 const devicePixelRatio = window.devicePixelRatio || 1;
 
-gameWidth = innerWidth * devicePixelRatio;
-gameHeight = innerHeight * devicePixelRatio;
+gameWidth = 1024 * devicePixelRatio;
+gameHeight = 576 * devicePixelRatio;
 
 const x = gameWidth / 2;
 const y = gameHeight / 2;
@@ -23,13 +23,31 @@ const INTERPOLATION_DELAY = 100; // 100ms interpolation delay
 let lastServerUpdate = Date.now();
 let previousPositions = {};
 
+let lastShotTime = 0;
+const PROJECTILE_COOLDOWN = 400; // in milliseconds
+
+let landscape;
+function preload() {
+  landscape = loadImage("assets/bg2.png");
+}
+
 function setup() {
   createCanvas(windowWidth, windowHeight);
   rectMode(CENTER);
+  pixelDensity(1);
+
+  // Create an off-screen graphics buffer
+  bgPattern = createGraphics(width, height);
+  // Tile the image onto the buffer once
+  for (let x = 0; x < width; x += landscape.width) {
+    for (let y = 0; y < height; y += landscape.height) {
+      bgPattern.image(landscape, x, y);
+    }
+  }
 }
 
 function draw() {
-  background(200);
+  image(bgPattern, 0, 0);
   const now = Date.now();
   const serverTimeDelta = now - lastServerUpdate;
 
@@ -131,6 +149,8 @@ window.addEventListener("keydown", (event) => {
       JSON.stringify({
         type: "position",
         seqNumber: seqNumber,
+        canvas_width: windowWidth,
+        canvas_height: windowHeight,
         dx: dx,
         dy: dy,
       }),

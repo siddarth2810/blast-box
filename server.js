@@ -15,8 +15,6 @@ let projectileId = 0;
 let projectileRadius = 5;
 const PLAYER_RADIUS = 10;
 const PROJECTILE_SPEED = 6.8;
-//const canvasWidth = 1920;
-//const canvasHeight = 1080;
 
 app.ws("/*", {
   open: (ws) => {
@@ -66,8 +64,14 @@ app.ws("/*", {
           if (!player) return;
           player.seqNumber = data.seqNumber;
 
-          player.x += data.dx;
-          player.y += data.dy;
+          player.x = Math.max(
+            player.radius,
+            Math.min(data.canvas_width - player.radius, player.x + data.dx),
+          );
+          player.y = Math.max(
+            player.radius,
+            Math.min(data.canvas_height - player.radius, player.y + data.dy),
+          );
 
           // Send position to the client that moved
           ws.send(
@@ -92,7 +96,15 @@ app.ws("/*", {
         }
 
         case "shoot": {
-          if (!backEndPlayers[ws.id]) return;
+          const player = backEndPlayers[ws.id];
+          if (!player) return;
+
+          const now = Date.now();
+          if (player.lastShot && now - player.lastShot < 300) {
+            // 300 ms cooldown
+            return;
+          }
+          player.lastShot = now;
 
           projectileId++;
           const { x, y, angle } = data;
@@ -108,7 +120,7 @@ app.ws("/*", {
             createdAt: Date.now(),
           };
 
-          // Notify this client about projectiles and then broadcast
+          // Notify client about projectiles then broadcast
           ws.send(
             JSON.stringify({
               type: "updateProjectiles",
@@ -163,7 +175,7 @@ setInterval(() => {
     projectile.y += projectile.velocity.y;
 
     // Check if projectile is out of bounds
-    if (now - projectile.createdAt > 2500) {
+    if (now - projectile.createdAt > 3000) {
       delete backEndProjectiles[id];
       continue;
     }
@@ -215,7 +227,7 @@ app.get("/*", (res, req) => {
     console.log("Request was aborted by the client.");
   });
 
-  fs.readFile(filePath, "utf-8", (err, data) => {
+  fs.readFile(filePath, (err, data) => {
     res.cork(() => {
       if (err || !data) {
         res.end("File not found");
@@ -236,6 +248,8 @@ function getContentType(filePath) {
     ".js": "application/javascript",
     ".css": "text/css",
     ".json": "application/json",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
   };
   return types[ext] || "text/plain";
 }

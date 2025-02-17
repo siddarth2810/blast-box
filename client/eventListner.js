@@ -4,6 +4,14 @@ addEventListener("click", (event) => {
     return;
   }
 
+  // Check if cooldown period has passed
+  const now = Date.now();
+  if (now - lastShotTime < PROJECTILE_COOLDOWN) {
+    // Too soon to shoot again, ignore this click
+    return;
+  }
+  lastShotTime = now;
+
   const playerPosition = {
     x: frontEndPlayers[currentPlayerId].x,
     y: frontEndPlayers[currentPlayerId].y,
@@ -14,13 +22,6 @@ addEventListener("click", (event) => {
     event.clientX - playerPosition.x,
   );
 
-  /*
-  const velocity = {
-    x: Math.cos(angle) * 5,
-    y: Math.sin(angle) * 5,
-  };
-  */
-
   ws.send(
     JSON.stringify({
       type: "shoot",
@@ -29,16 +30,4 @@ addEventListener("click", (event) => {
       angle,
     }),
   );
-
-  /*
-  frontEndProjectiles.push(
-    new Projectile({
-      x: playerPosition.x,
-      y: playerPosition.y,
-      angle: angle,
-      velocity,
-    }),
-  );
-  */
-  console.log(frontEndProjectiles);
 });
