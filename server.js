@@ -1,9 +1,11 @@
+//server.js
 const uws = require("./uWebSockets.js-20.49.0/uws");
 const { v4: uuidv4 } = require("uuid");
 const path = require("path");
 const fs = require("fs");
 
-const PORT = 8000;
+const PORT = 8080;
+const TICK_INTERVAL = 1000 / 60;
 const app = uws.App();
 
 const backEndPlayers = {};
@@ -12,8 +14,9 @@ const backEndProjectiles = {};
 let projectileId = 0;
 let projectileRadius = 5;
 const PLAYER_RADIUS = 10;
-const canvasWidth = 1920;
-const canvasHeight = 1080;
+const PROJECTILE_SPEED = 6.8;
+//const canvasWidth = 1920;
+//const canvasHeight = 1080;
 
 app.ws("/*", {
   open: (ws) => {
@@ -94,15 +97,15 @@ app.ws("/*", {
           projectileId++;
           const { x, y, angle } = data;
           const velocity = {
-            x: Math.cos(angle) * 2.7,
-            y: Math.sin(angle) * 2.7,
+            x: Math.cos(angle) * PROJECTILE_SPEED,
+            y: Math.sin(angle) * PROJECTILE_SPEED,
           };
-
           backEndProjectiles[projectileId] = {
             x,
             y,
             velocity,
             playerId: ws.id,
+            createdAt: Date.now(),
           };
 
           // Notify this client about projectiles and then broadcast
@@ -153,18 +156,14 @@ function broadcastPlayers() {
 // Broadcast updates
 setInterval(() => {
   // Update projectile positions, remove if out-of-bounds
+  const now = Date.now();
   for (const id in backEndProjectiles) {
     const projectile = backEndProjectiles[id];
     projectile.x += projectile.velocity.x;
     projectile.y += projectile.velocity.y;
 
     // Check if projectile is out of bounds
-    if (
-      projectile.x < 0 ||
-      projectile.x > canvasWidth ||
-      projectile.y < 0 ||
-      projectile.y > canvasHeight
-    ) {
+    if (now - projectile.createdAt > 2500) {
       delete backEndProjectiles[id];
       continue;
     }
@@ -201,7 +200,7 @@ setInterval(() => {
     }),
   );
   broadcastPlayers();
-}, 10);
+}, TICK_INTERVAL);
 
 // Serve static files
 app.get("/*", (res, req) => {
