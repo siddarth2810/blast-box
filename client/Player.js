@@ -4,8 +4,11 @@ class Player {
   constructor({ x, y, size, dangle }) {
     this.x = x;
     this.y = y;
+    this.targetX = x;
+    this.targetY = y;
     this.size = size;
     this.dangle = dangle;
+    this.targetAngle = dangle;
   }
 
   draw() {

@@ -1,4 +1,5 @@
-const url = "ws://localhost:8000";
+//frontend.js
+const url = "ws://localhost:8080";
 const ws = new WebSocket(url);
 
 const scoreEl = document.querySelector("#scoreEl");
@@ -35,17 +36,33 @@ function draw() {
   for (const id in frontEndPlayers) {
     const frontEndPlayer = frontEndPlayers[id];
 
-    // Don't interpolate current player
     if (id === currentPlayerId) {
-      frontEndPlayer.draw();
+      // smoothing factor to gradually correct the position.
+      const smoothingFactor = 0.1;
+      frontEndPlayer.x = lerp(
+        frontEndPlayer.x,
+        frontEndPlayer.targetX,
+        smoothingFactor,
+      );
+      frontEndPlayer.y = lerp(
+        frontEndPlayer.y,
+        frontEndPlayer.targetY,
+        smoothingFactor,
+      );
+      frontEndPlayer.dangle = lerp(
+        frontEndPlayer.dangle,
+        frontEndPlayer.targetAngle,
+        smoothingFactor,
+      );
+
       updateRotationAngle(id, frontEndPlayer);
+      frontEndPlayer.draw();
       continue;
     }
 
-    // Interpolate other players
+    // For other players, you already interpolate using previousPositions:
     if (frontEndPlayer.targetX !== undefined) {
       const alpha = Math.min(serverTimeDelta / INTERPOLATION_DELAY, 1);
-
       frontEndPlayer.x = lerp(
         previousPositions[id].x,
         frontEndPlayer.targetX,
@@ -62,11 +79,10 @@ function draw() {
         alpha,
       );
     }
-
     frontEndPlayer.draw();
   }
 
-  // Draw projectiles
+  // Draw projectiles (unchanged)
   for (const id in frontEndProjectiles) {
     const frontEndProjectile = frontEndProjectiles[id];
     frontEndProjectile.update();
@@ -94,7 +110,7 @@ function updateRotationAngle(id, player) {
 window.addEventListener("keydown", (event) => {
   if (!currentPlayerId || !frontEndPlayers[currentPlayerId]) return;
 
-  const speed = 15;
+  const speed = 20;
   let dx = 0,
     dy = 0;
   if (event.code === "KeyW" || event.code === "ArrowUp") dy = -speed;
@@ -150,8 +166,10 @@ ws.addEventListener("message", (event) => {
         const { id, backEndPlayer } = data;
         if (id === currentPlayerId) {
           // Update the authoritative position
-          frontEndPlayers[id].x = backEndPlayer.x;
-          frontEndPlayers[id].y = backEndPlayer.y;
+          //frontEndPlayers[id].x = backEndPlayer.x;
+          //frontEndPlayers[id].y = backEndPlayer.y;
+          let correctedY = backEndPlayer.y;
+          let correctedX = backEndPlayer.x;
 
           //removes any inputs whose seqNumber is <= the server-acknowledged seqNumber
           pendingInputs = pendingInputs.filter(
@@ -160,9 +178,12 @@ ws.addEventListener("message", (event) => {
 
           //loop over unacknowledged inputs and update
           for (const input of pendingInputs) {
-            frontEndPlayers[id].y += input.dy;
-            frontEndPlayers[id].x += input.dx;
+            correctedY += input.dy;
+            correctedX += input.dx;
           }
+          frontEndPlayers[id].targetX = correctedX;
+          frontEndPlayers[id].targetY = correctedY;
+          frontEndPlayers[id].targetAngle = backEndPlayer.dangle;
         }
         break;
 
@@ -220,9 +241,9 @@ ws.addEventListener("message", (event) => {
 
             // Only do immediate position update for the current player
             if (id === currentPlayerId) {
-              frontEndPlayer.x = backEndPlayer.x;
-              frontEndPlayer.y = backEndPlayer.y;
-              frontEndPlayer.dangle = backEndPlayer.dangle;
+              frontEndPlayer.targetX = backEndPlayer.x;
+              frontEndPlayer.targetY = backEndPlayer.y;
+              frontEndPlayer.targetAngle = backEndPlayer.dangle;
             } else {
               // For other players, store target position for interpolation
               frontEndPlayer.targetX = backEndPlayer.x;
@@ -234,10 +255,17 @@ ws.addEventListener("message", (event) => {
             frontEndPlayers[id] = new Player({
               x: backEndPlayer.x,
               y: backEndPlayer.y,
+              targetX: backEndPlayer.x,
+              targetY: backEndPlayer.y,
               username: backEndPlayer.username,
               dangle: backEndPlayer.dangle,
               size: 20,
             });
+            previousPositions[id] = {
+              x: backEndPlayer.x,
+              y: backEndPlayer.y,
+              dangle: backEndPlayer.dangle,
+            };
 
             document.querySelector("#playerLabels").innerHTML +=
               `<div data-id="${id}" data-score="${backEndPlayer.score}">${backEndPlayer.username}: ${backEndPlayer.score}</div>`;
@@ -249,6 +277,7 @@ ws.addEventListener("message", (event) => {
             const divToDelete = document.querySelector(`div[data-id="${id}"]`);
             divToDelete.parentNode.removeChild(divToDelete);
             delete frontEndPlayers[id];
+            delete previousPositions[id];
           }
         }
         //console.log(frontEndPlayers);
