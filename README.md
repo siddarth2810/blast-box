@@ -1,6 +1,10 @@
 # Blast-Box 
 
 
+<img width="794" height="837" alt="screenshot-20260106-190152Z-selected" src="https://github.com/user-attachments/assets/4574ef2a-4b7f-49bb-9fcf-b44fa960be25" />
+
+
+## Demo
 https://github.com/user-attachments/assets/3053a6e2-ee23-4335-ad09-789a2765db53
 
 
